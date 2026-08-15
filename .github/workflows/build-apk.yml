@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     # buildozer-action currently expects Ubuntu 20.04's toolchain versions
-    runs-on: runs-on: ubuntu-latest
+    runs-on: runs-on:ubuntu-latest
 
     steps:
       - name: Check out the repository
