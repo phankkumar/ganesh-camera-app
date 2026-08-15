@@ -8,7 +8,7 @@ version = 0.1
 # Pinned to Python 3.11 - newer Python (3.14, whatever the build image
 # defaults to) has a known incompatibility with Android/NDK cross-compilation
 # (remote_debugging module doesn't build - see kivy/python-for-android#3274).
-requirements = python3==3.11.9,kivy,pyjnius
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,pyjnius
 
 orientation = portrait
 fullscreen = 0
