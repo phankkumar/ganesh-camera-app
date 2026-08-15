@@ -15,11 +15,33 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Build APK with official Buildozer Docker image
+      # Pinning host Python to 3.11 here matches the target Python pin in
+      # buildozer.spec (python3==3.11.9). Buildozer requires the host and
+      # target Python versions to match, and the kivy/buildozer Docker
+      # image bundles a fixed (currently bleeding-edge, Android-incompatible)
+      # Python as its host interpreter - building directly on the runner
+      # like this gives us control over that instead.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
         run: |
-          docker run --rm \
-            --volume "${{ github.workspace }}":/home/user/hostcwd \
-            kivy/buildozer android debug
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses-dev libffi-dev libssl-dev \
+            automake build-essential libltdl-dev cmake
+
+      - name: Install Buildozer and Cython
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython==0.29.36
+
+      - name: Build APK with Buildozer
+        run: buildozer android debug
 
       - name: Upload APK as build artifact
         uses: actions/upload-artifact@v4

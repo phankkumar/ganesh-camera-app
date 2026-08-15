@@ -5,7 +5,10 @@ package.domain = org.example
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,xml
 version = 0.1
-requirements = python3,kivy,pyjnius
+# Pinned to Python 3.11 - newer Python (3.14, whatever the build image
+# defaults to) has a known incompatibility with Android/NDK cross-compilation
+# (remote_debugging module doesn't build - see kivy/python-for-android#3274).
+requirements = python3==3.11.9,kivy,pyjnius
 
 orientation = portrait
 fullscreen = 0
@@ -26,6 +29,9 @@ android.archs = arm64-v8a, armeabi-v7a
 # If your buildozer version doesn't expose this key, see README.md for
 # the manual AndroidManifest.xml override method.
 android.uses_feature = android.hardware.camera:required, android.hardware.camera.any:required, android.hardware.camera.front:false
+
+# Required for CI/automation (GitHub Actions has no interactive terminal
+# to type "y" at the SDK license prompt).
 android.accept_sdk_license = True
 
 # FileProvider is required for the share-sheet (see main.py share_file()).
