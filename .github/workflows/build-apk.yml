@@ -1,0 +1,30 @@
+name: Build Android APK
+
+# Runs automatically whenever you push to main, and can also be
+# triggered manually from the Actions tab in GitHub.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # buildozer-action currently expects Ubuntu 20.04's toolchain versions
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
+
+      - name: Upload APK as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cameraapp-debug-apk
+          path: bin/*.apk
