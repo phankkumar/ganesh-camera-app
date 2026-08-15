@@ -25,7 +25,7 @@ android.archs = arm64-v8a, armeabi-v7a
 # to the generated AndroidManifest.xml as <uses-feature required="true">.
 # If your buildozer version doesn't expose this key, see README.md for
 # the manual AndroidManifest.xml override method.
-android.uses_feature = android.hardware.camera:required, android.hardware.camera.any:required, android.hardware.camera.front:false
+android.uses_feature = android.hardware.camera:required, android.hardware.camera.any:required, android.hardware.camera.front:false, android.accept_sdk_license = True
 
 # FileProvider is required for the share-sheet (see main.py share_file()).
 # You'll need a res/xml/provider_paths.xml and a matching <provider> entry
