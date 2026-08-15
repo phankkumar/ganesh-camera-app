@@ -9,19 +9,17 @@ on:
 
 jobs:
   build:
-    # buildozer-action currently expects Ubuntu 20.04's toolchain versions
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          command: buildozer android debug
-          buildozer_version: stable
+      - name: Build APK with official Buildozer Docker image
+        run: |
+          docker run --rm \
+            --volume "${{ github.workspace }}":/home/user/hostcwd \
+            kivy/buildozer android debug
 
       - name: Upload APK as build artifact
         uses: actions/upload-artifact@v4
