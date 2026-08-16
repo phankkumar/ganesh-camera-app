@@ -11,9 +11,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # Applies to every step below, including subprocesses spawned deep
+    # inside python-for-android's own build (which runs its own internal
+    # "pip install -U pip" in an isolated venv it creates for itself -
+    # separate from the outer pip we install in "Install Buildozer and
+    # Cython" below). Without this, that nested pip upgrade grabs
+    # whatever "latest" pip currently is on PyPI, which has repeatedly
+    # broken the build with ImportError: cannot import name
+    # 'open_rich_spinner' from 'pip._internal.cli.spinners'.
+    env:
+      PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraints.txt
+
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+
+      - name: Create pip constraints file
+        run: echo "pip==24.0" > pip-constraints.txt
 
       # Pinning host Python to 3.11 here matches the target Python pin in
       # buildozer.spec (python3==3.11.9). Buildozer requires the host and
@@ -37,7 +51,6 @@ jobs:
 
       - name: Install Buildozer and Cython
         run: |
-          #pip install --upgrade pip
           pip install pip==24.0
           pip install buildozer cython==0.29.36
 

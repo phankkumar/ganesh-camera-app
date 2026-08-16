@@ -5,9 +5,12 @@ package.domain = org.example
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,xml
 version = 0.1
-# Pinned to Python 3.11 - newer Python (3.14, whatever the build image
-# defaults to) has a known incompatibility with Android/NDK cross-compilation
+# Pinned to Python 3.11 - newer Python (3.14, whatever the default recipe
+# resolves to) has a known incompatibility with Android/NDK cross-compilation
 # (remote_debugging module doesn't build - see kivy/python-for-android#3274).
+# Both python3 AND hostpython3 must be pinned together - they're separate
+# recipes and Buildozer requires them to match exactly, or the build fails
+# with "python3 should have same version as hostpython3".
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy,pyjnius
 
 orientation = portrait
