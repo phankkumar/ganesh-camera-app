@@ -247,6 +247,7 @@ class CameraScreen(BoxLayout):
 
         # --- Live rotation tuner (temporary dev aid - remove once the
         # correct ROTATION_BACK/ROTATION_FRONT values are confirmed) ---
+        # adding + 45 and -45 degree buttons to adjust the rotation of the live camera preview, and a reset button to set it back to 0 degrees. The current rotation is displayed in a label.
         self.tuner_row = BoxLayout(
             size_hint_y=None, height=self.BUTTON_HEIGHT + dp(16),
             spacing=4, padding=(6, 4),
