@@ -58,19 +58,12 @@ except Exception:
 
 APP_FOLDER_NAME = "CameraApp"
 
-# Sensor-mount rotation correction, in degrees. Kivy's legacy Camera
-# widget doesn't auto-correct for how the phone's camera sensors are
-# physically mounted relative to the screen - back and front sensors
-# are usually mounted differently, which is why they skew in opposite
-# directions if left uncorrected.
-#
-# These starting values (90 / -90) are the most common correction on
-# Android phones, but the exact angle needed varies by device/manufacturer.
-# If the preview still looks off after this change, try adjusting these
-# two numbers - common values to try are 90, -90, 180, and 270 (or 0 if
-# a given camera turns out to need no correction at all).
-ROTATION_BACK = 90
-ROTATION_FRONT = -90
+# Starting rotation correction, in degrees - set to 0 (no correction).
+# Use the on-screen rotation tuner (-15° / Reset / +15° buttons) to find
+# the correct values live on your device, then hardcode them here once
+# confirmed, and the tuner row can be removed.
+ROTATION_BACK = 0
+ROTATION_FRONT = 0
 
 
 class RotatedCameraBox(BoxLayout):
@@ -213,7 +206,7 @@ class CameraScreen(BoxLayout):
         self.current_facing = "back"  # "back", "front", or "dual"
         self.last_saved_path = None
         self.active_cameras = []  # list of actual Camera (not wrapper) instances
-        self.active_camera_rotations = []  # matching rotation angle for each, for save correction
+        self.active_boxes = []  # list of RotatedCameraBox instances (for live rotation tuning)
 
         # --- Live camera view ---
         self.camera_container = BoxLayout(orientation="horizontal")
@@ -252,6 +245,31 @@ class CameraScreen(BoxLayout):
         self.add_widget(self.camera_container)
         self.add_widget(self.controls)
 
+        # --- Live rotation tuner (temporary dev aid - remove once the
+        # correct ROTATION_BACK/ROTATION_FRONT values are confirmed) ---
+        self.tuner_row = BoxLayout(
+            size_hint_y=None, height=self.BUTTON_HEIGHT + dp(16),
+            spacing=4, padding=(6, 4),
+        )
+        self.rotation_readout = Label(
+            text="rot: 0", size_hint_x=0.34, font_size=self.BUTTON_FONT_SIZE,
+        )
+        btn_rot_minus = Button(text="-45°", font_size=self.BUTTON_FONT_SIZE)
+        btn_rot_minus.bind(on_release=lambda *_: self.adjust_rotation(-45))
+
+        btn_rot_reset = Button(text="Reset", font_size=self.BUTTON_FONT_SIZE)
+        btn_rot_reset.bind(on_release=lambda *_: self.adjust_rotation(0, reset=True))
+
+        btn_rot_plus = Button(text="+45°", font_size=self.BUTTON_FONT_SIZE)
+        btn_rot_plus.bind(on_release=lambda *_: self.adjust_rotation(45))
+
+        for w in (self.rotation_readout, btn_rot_minus, btn_rot_reset, btn_rot_plus):
+            w.size_hint_y = None
+            w.height = self.BUTTON_HEIGHT
+            self.tuner_row.add_widget(w)
+
+        self.add_widget(self.tuner_row)
+
         # --- Post-capture preview screen (built once, shown/hidden as needed) ---
         self.preview_container = BoxLayout(orientation="vertical")
         self.preview_image = Image(allow_stretch=True, keep_ratio=True)
@@ -282,7 +300,7 @@ class CameraScreen(BoxLayout):
                 child.camera.play = False
             self.camera_container.remove_widget(child)
         self.active_cameras = []
-        self.active_camera_rotations = []
+        self.active_boxes = []
 
     def switch_camera(self, facing):
         """
@@ -298,14 +316,14 @@ class CameraScreen(BoxLayout):
             box = RotatedCameraBox(index=0, resolution=(1280, 720), rotation=ROTATION_BACK)
             self.camera_container.add_widget(box)
             self.active_cameras = [box.camera]
-            self.active_camera_rotations = [ROTATION_BACK]
+            self.active_boxes = [box]
             self.status_label.text = "Back camera"
 
         elif facing == "front":
             box = RotatedCameraBox(index=1, resolution=(1280, 720), rotation=ROTATION_FRONT)
             self.camera_container.add_widget(box)
             self.active_cameras = [box.camera]
-            self.active_camera_rotations = [ROTATION_FRONT]
+            self.active_boxes = [box]
             self.status_label.text = "Front camera"
 
         elif facing == "dual":
@@ -315,7 +333,7 @@ class CameraScreen(BoxLayout):
                 self.camera_container.add_widget(box_back)
                 self.camera_container.add_widget(box_front)
                 self.active_cameras = [box_back.camera, box_front.camera]
-                self.active_camera_rotations = [ROTATION_BACK, ROTATION_FRONT]
+                self.active_boxes = [box_back, box_front]
                 self.status_label.text = "Dual (if supported)"
             except Exception as e:
                 print("Dual camera open failed, falling back to back:", e)
@@ -323,8 +341,27 @@ class CameraScreen(BoxLayout):
                 box = RotatedCameraBox(index=0, resolution=(1280, 720), rotation=ROTATION_BACK)
                 self.camera_container.add_widget(box)
                 self.active_cameras = [box.camera]
-                self.active_camera_rotations = [ROTATION_BACK]
+                self.active_boxes = [box]
                 self.status_label.text = "Back (dual unsupported)"
+
+        self._update_rotation_readout()
+
+    def adjust_rotation(self, delta, reset=False):
+        """Live-adjust the rotation of whichever camera(s) are currently
+        showing, so you can dial in the correct angle on-device without
+        rebuilding. Once you find the right values, note the readout
+        number(s) and hardcode them into ROTATION_BACK / ROTATION_FRONT
+        at the top of this file, then this tuner can be removed."""
+        for box in self.active_boxes:
+            if reset:
+                box._rotate.angle = 0
+            else:
+                box._rotate.angle = (box._rotate.angle + delta) % 360
+        self._update_rotation_readout()
+
+    def _update_rotation_readout(self):
+        angles = [str(int(box._rotate.angle)) for box in self.active_boxes]
+        self.rotation_readout.text = "rot: " + ",".join(angles) if angles else "rot: -"
 
     def capture(self):
         cams = self.active_cameras
@@ -344,7 +381,7 @@ class CameraScreen(BoxLayout):
             filepath = os.path.join(save_dir, filename)
             texture.save(filepath, flipped=False)
 
-            rotation = self.active_camera_rotations[i] if i < len(self.active_camera_rotations) else 0
+            rotation = self.active_boxes[i]._rotate.angle if i < len(self.active_boxes) else 0
             rotate_saved_image(filepath, rotation)
 
             notify_gallery(filepath)
