@@ -11,7 +11,7 @@ Features:
   preview on devices that support it, with automatic fallback
 - Per-camera rotation correction that persists across mode switches,
   with separate tuner controls for Back and Front when both are shown
-  at once in Dual mode
+  at once in Dual mode.
 - Capture uses export_to_png() on the (already rotation-corrected)
   camera widget, so the saved photo always matches the live preview
   exactly - display and save share a single source of truth for
