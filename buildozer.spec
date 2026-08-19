@@ -38,9 +38,15 @@ android.uses_feature = android.hardware.camera:required, android.hardware.camera
 android.accept_sdk_license = True
 
 # FileProvider is required for the share-sheet (see main.py share_file()).
-# You'll need a res/xml/provider_paths.xml and a matching <provider> entry
-# in AndroidManifest.xml -- see README.md for the exact snippet.
+# res/xml/provider_paths.xml declares the shareable paths; the <provider>
+# tag itself gets injected into the generated AndroidManifest.xml from
+# src/android/extra_manifest_application.xml on every build (this is the
+# part that was previously missing - a manual edit to the *generated*
+# manifest doesn't survive a fresh CI build, since .buildozer/ is
+# recreated from scratch every run; this key reads from a file committed
+# to the repo, so it's applied automatically every time).
 android.add_resources = res
+android.extra_manifest_application_arguments = src/android/extra_manifest_application.xml
 
 [buildozer]
 log_level = 2

@@ -312,6 +312,56 @@ def share_files(filepaths):
         print("Multi-share failed:", e)
 
 
+# Package names for direct-share targets (bypassing the generic chooser).
+PACKAGE_WHATSAPP = "com.whatsapp"
+PACKAGE_GMAIL = "com.google.android.gm"
+
+
+def share_files_to_package(filepaths, package_name):
+    """
+    Share one or more files directly to a specific app (e.g. WhatsApp,
+    Gmail) via Intent.setPackage(), skipping the generic chooser. Falls
+    back to the generic chooser if the target app isn't installed or the
+    direct intent fails for any reason.
+    """
+    if not filepaths:
+        return
+    if not ANDROID:
+        print(f"[desktop stub] would share {filepaths} directly to {package_name}")
+        return
+    try:
+        Intent = autoclass("android.content.Intent")
+        File = autoclass("java.io.File")
+        FileProvider = autoclass("androidx.core.content.FileProvider")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        ArrayList = autoclass("java.util.ArrayList")
+
+        activity = PythonActivity.mActivity
+        authority = activity.getPackageName() + ".fileprovider"
+
+        if len(filepaths) == 1:
+            intent = Intent(Intent.ACTION_SEND)
+            f = File(filepaths[0])
+            uri = FileProvider.getUriForFile(activity, authority, f)
+            intent.putExtra(Intent.EXTRA_STREAM, uri)
+        else:
+            intent = Intent(Intent.ACTION_SEND_MULTIPLE)
+            uris = ArrayList()
+            for path in filepaths:
+                f = File(path)
+                uri = FileProvider.getUriForFile(activity, authority, f)
+                uris.add(uri)
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+
+        intent.setType("image/png")
+        intent.setPackage(package_name)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        activity.startActivity(intent)
+    except Exception as e:
+        print(f"Direct share to {package_name} failed, falling back to chooser:", e)
+        share_files(filepaths)
+
+
 class HomeScreen(Screen):
     """Landing screen: pick a camera mode, or exit the app."""
 
@@ -536,13 +586,18 @@ class LiveCameraScreen(Screen):
         self.tuner_container.clear_widgets()
 
         if self.facing == "dual":
-            rows = [("back", "Back Rotate"), ("front", "Front Rotate")]
+            # Short, explicit prefix (B/F) on every button in each row -
+            # not just the readout label - so it's unambiguous which row
+            # controls which camera even at a glance, since the two rows
+            # sit close together in Dual mode.
+            rows = [("back", "Back", "B")]
+            rows.append(("front", "Front", "F"))
         else:
-            rows = [(self.facing, "Rotate")]
+            rows = [(self.facing, "Rotate", "")]
 
         self.tuner_container.height = (self.BUTTON_HEIGHT + dp(10)) * len(rows)
 
-        for cam_key, label_text in rows:
+        for cam_key, label_text, short_prefix in rows:
             row = BoxLayout(
                 size_hint_y=None, height=self.BUTTON_HEIGHT + dp(10),
                 spacing=4, padding=(6, 2),
@@ -552,13 +607,14 @@ class LiveCameraScreen(Screen):
                 text=f"{label_text}: {int(current)}\u00b0", size_hint_x=0.38,
                 font_size=self.TUNER_FONT_SIZE, color=COLOR_TEXT_MUTED,
             )
-            btn_minus = styled_button("-45\u00b0", font_size=self.TUNER_FONT_SIZE)
+            prefix = f"{short_prefix} " if short_prefix else ""
+            btn_minus = styled_button(f"{prefix}-45\u00b0", font_size=self.TUNER_FONT_SIZE)
             btn_minus.bind(on_release=lambda *_, k=cam_key: self.adjust_rotation(k, -45))
 
-            btn_reset = styled_button("Reset", font_size=self.TUNER_FONT_SIZE)
+            btn_reset = styled_button(f"{prefix}Reset" if prefix else "Reset", font_size=self.TUNER_FONT_SIZE)
             btn_reset.bind(on_release=lambda *_, k=cam_key: self.adjust_rotation(k, 0, reset=True))
 
-            btn_plus = styled_button("+45\u00b0", font_size=self.TUNER_FONT_SIZE)
+            btn_plus = styled_button(f"{prefix}+45\u00b0", font_size=self.TUNER_FONT_SIZE)
             btn_plus.bind(on_release=lambda *_, k=cam_key: self.adjust_rotation(k, 45))
 
             for w in (readout, btn_minus, btn_reset, btn_plus):
@@ -595,32 +651,51 @@ class LiveCameraScreen(Screen):
         if not boxes:
             return
 
-        save_dir = get_save_dir()
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        saved = []
+        self._pending_save_dir = get_save_dir()
+        self._pending_timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self._pending_boxes = list(enumerate(boxes))
+        self._pending_multi = len(boxes) > 1
+        self._pending_saved = []
+        self._capture_next_box()
 
-        for i, box in enumerate(boxes):
-            suffix = f"_{i}" if len(boxes) > 1 else ""
-            filename = f"IMG_{timestamp}{suffix}.png"
-            filepath = os.path.join(save_dir, filename)
-            # Renders exactly what's on screen for this widget, including
-            # the canvas Rotate correction - guaranteed to match the live
-            # preview, since it's the same canvas being rendered.
-            box.export_to_png(filepath)
-            notify_gallery(filepath)
-            saved.append(filepath)
+    def _capture_next_box(self, *_args):
+        """
+        Captures one camera at a time instead of looping through both
+        back-to-back in the same instant. Two things this guards against
+        on dual-camera devices: (1) a possible GPU-render race between
+        two export_to_png() calls fired in the same frame, and (2) most
+        phones don't reliably support two truly concurrent camera
+        hardware streams via the legacy Camera API this widget uses, so
+        whichever camera isn't "active" at the exact capture instant can
+        produce a stale/blank frame. A short pause between captures gives
+        each camera a moment of clear access before it's captured - this
+        was the fix for dual-mode capture only ever producing the front
+        camera's photo.
+        """
+        if not self._pending_boxes:
+            if self._pending_saved:
+                self.last_saved_paths = self._pending_saved
+                preview_screen = self.manager.get_screen("preview")
+                preview_screen.show(self._pending_saved)
+                self.manager.transition = SlideTransition(direction="up")
+                self.manager.current = "preview"
+            return
 
-        if saved:
-            # In Dual mode this is [back_photo, front_photo] - BOTH get
-            # saved and BOTH get shown on the preview screen, not just
-            # the last one (that was the "only front got captured" bug -
-            # both files were always being written, the preview screen
-            # just never displayed the back one).
-            self.last_saved_paths = saved
-            preview_screen = self.manager.get_screen("preview")
-            preview_screen.show(saved)
-            self.manager.transition = SlideTransition(direction="up")
-            self.manager.current = "preview"
+        i, box = self._pending_boxes.pop(0)
+        suffix = f"_{i}" if self._pending_multi else ""
+        filename = f"IMG_{self._pending_timestamp}{suffix}.png"
+        filepath = os.path.join(self._pending_save_dir, filename)
+        # Renders exactly what's on screen for this widget, including
+        # the canvas Rotate correction - guaranteed to match the live
+        # preview, since it's the same canvas being rendered.
+        box.export_to_png(filepath)
+        notify_gallery(filepath)
+        self._pending_saved.append(filepath)
+
+        if self._pending_boxes:
+            Clock.schedule_once(self._capture_next_box, 0.4)
+        else:
+            self._capture_next_box()
 
     def share_last(self):
         if not self.last_saved_paths:
@@ -658,19 +733,31 @@ class PhotoPreviewScreen(Screen):
 
         controls = BoxLayout(
             size_hint_y=None, height=self.BUTTON_HEIGHT + dp(16),
-            spacing=8, padding=(8, 6),
+            spacing=6, padding=(8, 6),
         )
-        btn_back = styled_button("< Back to camera", font_size=self.FONT_SIZE)
+        btn_back = styled_button("< Back", font_size=self.FONT_SIZE)
         btn_back.size_hint_y = None
         btn_back.height = self.BUTTON_HEIGHT
         btn_back.bind(on_release=lambda *_: self.go_back())
 
-        self.btn_share = styled_button("Share", bg=COLOR_ACCENT, font_size=self.FONT_SIZE, bold=True)
+        btn_whatsapp = styled_button("WhatsApp", bg=(0.15, 0.55, 0.35, 1), font_size=self.FONT_SIZE)
+        btn_whatsapp.size_hint_y = None
+        btn_whatsapp.height = self.BUTTON_HEIGHT
+        btn_whatsapp.bind(on_release=lambda *_: self.share_to(PACKAGE_WHATSAPP))
+
+        btn_gmail = styled_button("Gmail", bg=(0.75, 0.30, 0.20, 1), font_size=self.FONT_SIZE)
+        btn_gmail.size_hint_y = None
+        btn_gmail.height = self.BUTTON_HEIGHT
+        btn_gmail.bind(on_release=lambda *_: self.share_to(PACKAGE_GMAIL))
+
+        self.btn_share = styled_button("More", bg=COLOR_ACCENT, font_size=self.FONT_SIZE, bold=True)
         self.btn_share.size_hint_y = None
         self.btn_share.height = self.BUTTON_HEIGHT
         self.btn_share.bind(on_release=lambda *_: self.share())
 
         controls.add_widget(btn_back)
+        controls.add_widget(btn_whatsapp)
+        controls.add_widget(btn_gmail)
         controls.add_widget(self.btn_share)
 
         root.add_widget(self.image_container)
@@ -697,7 +784,7 @@ class PhotoPreviewScreen(Screen):
             col.add_widget(img)
             self.image_container.add_widget(col)
 
-        self.btn_share.text = "Share both" if len(filepaths) == 2 else "Share"
+        self.btn_share.text = "More" if len(filepaths) == 1 else "More"
 
     def go_back(self):
         self.manager.transition = SlideTransition(direction="down")
@@ -706,6 +793,10 @@ class PhotoPreviewScreen(Screen):
     def share(self):
         if self.filepaths:
             share_files(self.filepaths)
+
+    def share_to(self, package_name):
+        if self.filepaths:
+            share_files_to_package(self.filepaths, package_name)
 
 
 class GaneshCameraApp(App):
