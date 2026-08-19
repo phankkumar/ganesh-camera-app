@@ -11,7 +11,7 @@ version = 0.1
 # Both python3 AND hostpython3 must be pinned together - they're separate
 # recipes and Buildozer requires them to match exactly, or the build fails
 # with "python3 should have same version as hostpython3".
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy,pyjnius,pillow
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,pyjnius
 
 orientation = portrait
 fullscreen = 0
