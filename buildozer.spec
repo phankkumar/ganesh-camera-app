@@ -38,15 +38,18 @@ android.uses_feature = android.hardware.camera:required, android.hardware.camera
 android.accept_sdk_license = True
 
 # FileProvider is required for the share-sheet (see main.py share_file()).
-# res/xml/provider_paths.xml declares the shareable paths; the <provider>
-# tag itself gets injected into the generated AndroidManifest.xml from
-# src/android/extra_manifest_application.xml on every build (this is the
-# part that was previously missing - a manual edit to the *generated*
-# manifest doesn't survive a fresh CI build, since .buildozer/ is
-# recreated from scratch every run; this key reads from a file committed
-# to the repo, so it's applied automatically every time).
+# res/xml/provider_paths.xml declares the shareable paths. The <provider>
+# tag itself is injected by the p4a build hook (p4a/hook.py) which directly
+# edits the generated AndroidManifest.xml on disk - this replaces an
+# earlier approach (android.extra_manifest_application_arguments passing
+# a multi-line XML string as a CLI argument) that caused a
+# ManifestMerger2$MergeFailureException: multi-line strings don't
+# reliably survive being passed as a CLI arg across the buildozer ->
+# python-for-android process boundary. Both approaches are committed to
+# the repo, so both are applied automatically on every fresh CI build
+# (unlike a manual edit to a *generated* file, which gets wiped every run).
 android.add_resources = res
-android.extra_manifest_application_arguments = src/android/extra_manifest_application.xml
+p4a.hook = p4a/hook.py
 
 [buildozer]
 log_level = 2
