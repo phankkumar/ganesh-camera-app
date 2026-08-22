@@ -40,16 +40,19 @@ android.accept_sdk_license = True
 # FileProvider is required for the share-sheet (see main.py share_file()).
 # res/xml/provider_paths.xml declares the shareable paths. The <provider>
 # tag itself is injected by the p4a build hook (p4a/hook.py) which directly
-# edits the generated AndroidManifest.xml on disk - this replaces an
-# earlier approach (android.extra_manifest_application_arguments passing
-# a multi-line XML string as a CLI argument) that caused a
-# ManifestMerger2$MergeFailureException: multi-line strings don't
-# reliably survive being passed as a CLI arg across the buildozer ->
-# python-for-android process boundary. Both approaches are committed to
-# the repo, so both are applied automatically on every fresh CI build
-# (unlike a manual edit to a *generated* file, which gets wiped every run).
+# edits the generated AndroidManifest.xml on disk.
+#
+# Declaring the <provider> in the manifest is only half of what's needed -
+# the actual androidx.core.content.FileProvider JAVA CLASS also has to be
+# bundled into the APK, which requires the AndroidX Core library as a
+# Gradle dependency. Without these two lines, the app crashes on startup
+# with "ClassNotFoundException: Didn't find class androidx.core.content.
+# FileProvider" - the manifest declares a provider whose implementation
+# was never actually compiled into the app.
 android.add_resources = res
 p4a.hook = p4a/hook.py
+android.enable_androidx = True
+android.gradle_dependencies = androidx.core:core:1.10.1
 
 [buildozer]
 log_level = 2
