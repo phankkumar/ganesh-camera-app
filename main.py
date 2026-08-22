@@ -563,8 +563,15 @@ class LiveCameraScreen(Screen):
 
         elif facing == "dual":
             try:
-                box_back = RotatedCameraBox(index=0, resolution=(640, 480), rotation=self.rotation_back)
-                box_front = RotatedCameraBox(index=1, resolution=(640, 480), rotation=self.rotation_front)
+                # Lower resolution than single-camera mode - two
+                # concurrent streams sharing the same image signal
+                # processor is inherently more contended than one, and a
+                # smaller frame size reduces the bandwidth each stream
+                # is fighting the other for, which can reduce (though not
+                # fully eliminate) preview flicker on devices where the
+                # hardware doesn't cleanly support two live streams.
+                box_back = RotatedCameraBox(index=0, resolution=(480, 360), rotation=self.rotation_back)
+                box_front = RotatedCameraBox(index=1, resolution=(480, 360), rotation=self.rotation_front)
                 self.camera_container.add_widget(box_back)
                 self.camera_container.add_widget(box_front)
                 self.active_cameras = [box_back.camera, box_front.camera]
@@ -656,23 +663,37 @@ class LiveCameraScreen(Screen):
         self._pending_boxes = list(enumerate(boxes))
         self._pending_multi = len(boxes) > 1
         self._pending_saved = []
+
+        if self._pending_multi:
+            # Pause every camera up front. Each one gets resumed alone,
+            # briefly, right before its own capture below - see the
+            # explanation in _capture_next_box.
+            for box in boxes:
+                box.camera.play = False
+
         self._capture_next_box()
 
     def _capture_next_box(self, *_args):
         """
-        Captures one camera at a time instead of looping through both
-        back-to-back in the same instant. Two things this guards against
-        on dual-camera devices: (1) a possible GPU-render race between
-        two export_to_png() calls fired in the same frame, and (2) most
-        phones don't reliably support two truly concurrent camera
-        hardware streams via the legacy Camera API this widget uses, so
-        whichever camera isn't "active" at the exact capture instant can
-        produce a stale/blank frame. A short pause between captures gives
-        each camera a moment of clear access before it's captured - this
-        was the fix for dual-mode capture only ever producing the front
-        camera's photo.
+        Captures one camera at a time. In Dual mode, this also pauses
+        every OTHER camera before capturing this one, then briefly waits
+        before reading its texture.
+
+        Why: most phones don't reliably support two truly concurrent
+        camera hardware streams via the legacy Camera API this widget
+        uses - the OS hands exclusive access back and forth between them
+        rather than genuinely running both at once. A fixed delay alone
+        (the previous fix) mostly worked but could still occasionally
+        catch a camera mid-handoff, producing the same (usually front)
+        image for both files. Explicitly pausing the other camera(s)
+        removes the guesswork - only one stream is actually requesting
+        hardware access at the moment we capture, so there's nothing
+        for it to lose a handoff race against.
         """
         if not self._pending_boxes:
+            if self._pending_multi:
+                for box in self.active_boxes:
+                    box.camera.play = True
             if self._pending_saved:
                 self.last_saved_paths = self._pending_saved
                 preview_screen = self.manager.get_screen("preview")
@@ -682,6 +703,14 @@ class LiveCameraScreen(Screen):
             return
 
         i, box = self._pending_boxes.pop(0)
+
+        if self._pending_multi:
+            box.camera.play = True
+            Clock.schedule_once(lambda dt: self._do_capture(i, box), 0.5)
+        else:
+            self._do_capture(i, box)
+
+    def _do_capture(self, i, box):
         suffix = f"_{i}" if self._pending_multi else ""
         filename = f"IMG_{self._pending_timestamp}{suffix}.png"
         filepath = os.path.join(self._pending_save_dir, filename)
@@ -691,6 +720,9 @@ class LiveCameraScreen(Screen):
         box.export_to_png(filepath)
         notify_gallery(filepath)
         self._pending_saved.append(filepath)
+
+        if self._pending_multi:
+            box.camera.play = False
 
         if self._pending_boxes:
             Clock.schedule_once(self._capture_next_box, 0.4)
