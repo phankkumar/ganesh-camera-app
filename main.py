@@ -563,15 +563,16 @@ class LiveCameraScreen(Screen):
 
         elif facing == "dual":
             try:
-                # Lower resolution than single-camera mode - two
-                # concurrent streams sharing the same image signal
-                # processor is inherently more contended than one, and a
-                # smaller frame size reduces the bandwidth each stream
-                # is fighting the other for, which can reduce (though not
-                # fully eliminate) preview flicker on devices where the
-                # hardware doesn't cleanly support two live streams.
-                box_back = RotatedCameraBox(index=0, resolution=(480, 360), rotation=self.rotation_back)
-                box_front = RotatedCameraBox(index=1, resolution=(480, 360), rotation=self.rotation_front)
+                # NOTE: previously tried 480x360 here to ease ISP
+                # contention/flicker, but that resolution appears to not
+                # be a valid/supported preview size on this hardware -
+                # it silently broke the back camera's texture (no Python
+                # exception raised, so our except block below never
+                # caught it) rather than reducing flicker. Reverted to
+                # 640x480, which is confirmed working for basic
+                # side-by-side dual preview.
+                box_back = RotatedCameraBox(index=0, resolution=(640, 480), rotation=self.rotation_back)
+                box_front = RotatedCameraBox(index=1, resolution=(640, 480), rotation=self.rotation_front)
                 self.camera_container.add_widget(box_back)
                 self.camera_container.add_widget(box_front)
                 self.active_cameras = [box_back.camera, box_front.camera]
